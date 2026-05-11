@@ -137,6 +137,11 @@ if os.path.exists("logoemcali.png"):
 st.title("Burden + Selección de TC (Semidirecta / Indirecta)")
 st.caption("Herramienta técnica para la validación de medición y selección de transformadores de corriente.")
 
+# Créditos del desarrollador en la barra lateral
+st.sidebar.markdown("### Información del Autor")
+st.sidebar.markdown("---")
+st.sidebar.write("👨‍💻 **Ingeniero Walter Andres Betancourt**")
+
 pasted_text = st.text_area("Pega aquí el contenido del documento de Word", height=300)
 
 if pasted_text:
