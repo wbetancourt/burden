@@ -1,0 +1,540 @@
+
+burden_app/
+├─ app.py
+├─ engine.py
+├─ tables.py
+├─ excel_io.py
+├─ report_xlsx.py
+├─ requirements.txt
+└─ README.md
+
+streamlit>=1.33
+pandas>=2.1
+openpyxl>=3.1.2
+
+# tables.py
+TABLA4_SEMI = {
+    "3x120/208": [
+        (28, 43, "100/5"), (44, 65, "150/5"), (66, 86, "200/5"), (87, 129, "300/5"),
+        (130, 162, "400/5"), (163, 194, "500/5"), (195, 259, "600/5"), (260, 324, "800/5"),
+        (325, 389, "1000/5"), (390, 467, "1200/5"), (468, 648, "1600/5")
+    ],
+    "3x127/220": [
+        (30, 45, "100/5"), (46, 68, "150/5"), (69, 91, "200/5"), (92, 137, "300/5"),
+        (138, 182, "400/5"), (183, 228, "500/5"), (229, 274, "600/5"), (275, 365, "800/5"),
+        (366, 457, "1000/5"), (458, 548, "1200/5"), (549, 731, "1600/5")
+    ],
+    "3x254/440": [
+        (60, 91, "100/5"), (92, 137, "150/5"), (138, 183, "200/5"), (184, 274, "300/5"),
+        (275, 365, "400/5"), (366, 457, "500/5"), (458, 548, "600/5"), (549, 731, "800/5"),
+        (732, 914, "1000/5"), (915, 1097, "1200/5"), (1098, 1463, "1600/5")
+    ],
+    "120/240": [
+        (19, 28, "100/5"), (29, 43, "150/5"), (44, 57, "200/5"), (58, 86, "300/5"),
+        (87, 108, "400/5"), (109, 129, "500/5"), (130, 172, "600/5"), (173, 216, "800/5"),
+        (217, 259, "1000/5"), (260, 311, "1200/5"), (312, 438, "1600/5")
+    ],
+}
+
+TABLA5_IND = {
+    11.4: [
+        (79, 118, "5/5"), (158, 237, "10/5"), (238, 355, "15/5"), (356, 473, "20/5"),
+        (474, 592, "25/5"), (593, 710, "30/5"), (711, 947, "40/5"), (948, 1184, "50/5"),
+        (1185, 1421, "60/5"), (1422, 1829, "75/5"), (1830, 2369, "100/5"),
+        (2370, 3554, "150/5"), (3555, 4739, "200/5")
+    ],
+    13.2: [
+        (91, 137, "5/5"), (183, 274, "10/5"), (275, 411, "15/5"), (412, 503, "20/5"),
+        (504, 617, "25/5"), (618, 823, "30/5"), (824, 1029, "40/5"), (1030, 1234, "50/5"),
+        (1235, 1554, "60/5"), (1555, 1829, "75/5"), (1830, 2743, "100/5"),
+        (2744, 4115, "150/5"), (4116, 5144, "200/5")
+    ],
+    34.5: [
+        (239, 358, "5/5"), (478, 717, "10/5"), (718, 1075, "15/5"), (1076, 1314, "20/5"),
+        (1315, 1613, "25/5"), (1614, 2151, "30/5"), (2152, 2689, "40/5"), (2690, 3226, "50/5"),
+        (3227, 4063, "60/5"), (4064, 4780, "75/5"), (4781, 7170, "100/5"),
+        (7171, 10756, "150/5"), (10757, 13445, "200/5")
+    ],
+}
+``}
+
+----------------------------------------------------------------
+
+# engine.py
+from dataclasses import dataclass
+from typing import Dict, List, Tuple, Optional
+from tables import TABLA4_SEMI, TABLA5_IND
+
+@dataclass
+class Inputs:
+    tipo_medida: str                   # "Semidirecta" / "Indirecta"
+    fases: int                         # 1 o 3
+    kva_transformador: float
+    circuito_bt: Optional[str] = None  # semidirecta
+    kv: Optional[float] = None         # indirecta
+    tc_relacion: Optional[str] = None  # "150/5" o "5/5" etc.
+    ib_sec: float = 5.0
+    va_tc: float = 5.0
+    burden_medidor_va_fase: float = 0.2
+    burden_otros_va_fase: float = 0.0
+    r_ohm_km: float = 0.0
+    long_ida_km: float = 0.0
+
+def _pick_range(value: float, ranges: List[Tuple[float, float, str]]) -> Tuple[str, float]:
+    """
+    Devuelve (relación_tc, kVA_max) para el rango donde kVA_min <= value <= kVA_max.
+    Si no cae exacto, devuelve el último rango cuyo kVA_min <= value (comportamiento tipo BUSCARV VERDADERO).
+    """
+    ranges_sorted = sorted(ranges, key=lambda x: x[0])
+    candidate = None
+    for kmin, kmax, rel in ranges_sorted:
+        if value >= kmin:
+            candidate = (rel, kmax)
+        else:
+            break
+    if candidate is None:
+        # por debajo del primer rango
+        first = ranges_sorted[0]
+        return first[2], first[1]
+    return candidate
+
+def tc_recomendado(inp: Inputs) -> Dict[str, Optional[float]]:
+    """
+    Devuelve TC recomendado y kVA_max autorizado (según tabla).
+    """
+    if inp.tipo_medida == "Semidirecta":
+        if not inp.circuito_bt:
+            return {"tc": None, "kva_max": None}
+        rel, kva_max = _pick_range(inp.kva_transformador, TABLA4_SEMI[inp.circuito_bt])
+        return {"tc": rel, "kva_max": float(kva_max)}
+
+    if inp.tipo_medida == "Indirecta":
+        if inp.kv is None:
+            return {"tc": None, "kva_max": None}
+        rel, kva_max = _pick_range(inp.kva_transformador, TABLA5_IND[float(inp.kv)])
+        return {"tc": rel, "kva_max": float(kva_max)}
+
+    return {"tc": None, "kva_max": None}
+
+def kva_max_por_tc_instalado(inp: Inputs) -> Optional[float]:
+    """
+    kVA máximo permitido por la relación TC instalada (búsqueda exacta dentro del circuito/kV).
+    """
+    if not inp.tc_relacion:
+        return None
+
+    if inp.tipo_medida == "Semidirecta":
+        rows = TABLA4_SEMI.get(inp.circuito_bt or "", [])
+    else:
+        rows = TABLA5_IND.get(float(inp.kv), [])
+
+    for kmin, kmax, rel in rows:
+        if str(rel) == str(inp.tc_relacion):
+            return float(kmax)
+    return None
+
+def burden_por_fase(inp: Inputs) -> Dict[str, float]:
+    """
+    Burden por fase: medidor + cables + otros
+    Cable: I^2 * R_lazo; R_lazo = (2*L[km]) * (ohm/km)
+    """
+    r_lazo = (2 * inp.long_ida_km) * inp.r_ohm_km
+    va_cable = (inp.ib_sec ** 2) * r_lazo
+    va_total = inp.burden_medidor_va_fase + va_cable + inp.burden_otros_va_fase
+    utiliz = va_total / inp.va_tc if inp.va_tc else 0.0
+    return {
+        "r_lazo_ohm": r_lazo,
+        "va_cable": va_cable,
+        "va_total": va_total,
+        "utilizacion": utiliz
+    }
+
+def evalua(inp: Inputs) -> Dict:
+    rec = tc_recomendado(inp)
+    kva_inst = kva_max_por_tc_instalado(inp)
+    b = burden_por_fase(inp)
+
+    cumple_burden = b["va_total"] <= inp.va_tc if inp.va_tc else False
+    # ejemplo criterio 25%-100% sobre utilización:
+    cumple_util = (b["utilizacion"] >= 0.25) and (b["utilizacion"] <= 1.0)
+
+    cumple_kva_tc = (kva_inst is not None) and (inp.kva_transformador <= kva_inst)
+    cumple_tc_rec = (inp.tc_relacion is not None) and (rec["tc"] is not None) and (str(inp.tc_relacion) == str(rec["tc"]))
+
+    apto = all([cumple_burden, cumple_kva_tc, cumple_tc_rec])
+
+    return {
+        "tc_recomendado": rec["tc"],
+        "kva_max_tabla": rec["kva_max"],
+        "kva_max_tc_instalado": kva_inst,
+        "burden": b,
+        "cumple": {
+            "burden": cumple_burden,
+            "util_25_100": cumple_util,
+            "kva_vs_tc": cumple_kva_tc,
+            "tc_vs_recomendado": cumple_tc_rec
+        },
+        "resultado": "APTO" if apto else "NO APTO"
+    }
+``
+
+----------------------------------------------------------------------
+
+# excel_io.py
+from openpyxl import load_workbook
+
+def read_parametros(xlsx_bytes: bytes) -> dict:
+    wb = load_workbook(filename=bytes_to_filelike(xlsx_bytes), data_only=True)
+    ws = wb["Parametros"]
+
+    # Mapeo etiqueta (col A) -> valor (col B). Tu plantilla usa esa estructura. [1](blob:https://outlook.office.com/6bd3cbb4-764f-4d31-9cc7-a91d77be2dd9)
+    data = {}
+    for r in range(1, ws.max_row + 1):
+        key = ws.cell(r, 1).value
+        val = ws.cell(r, 2).value
+        if isinstance(key, str) and key.strip():
+            data[key.strip()] = val
+    return data
+
+def bytes_to_filelike(b: bytes):
+    import io
+    return io.BytesIO(b)
+
+---------------------------------------------------------------------------
+
+# report_xlsx.py
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+
+def build_evidence_xlsx(inp_dict: dict, results: dict) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Evidencia"
+
+    ws["A1"] = "EVIDENCIA – Cálculo Burden / Selección TC"
+    ws["A1"].font = Font(bold=True, size=14)
+
+    # Inputs
+    ws["A3"] = "Entradas"
+    ws["A3"].font = Font(bold=True)
+    row = 4
+    for k, v in inp_dict.items():
+        ws[f"A{row}"] = k
+        ws[f"B{row}"] = str(v)
+        row += 1
+
+    # Results
+    row += 1
+    ws[f"A{row}"] = "Resultados"
+    ws[f"A{row}"].font = Font(bold=True)
+    row += 1
+
+    for k, v in results.items():
+        if isinstance(v, dict):
+            ws[f"A{row}"] = k
+            ws[f"A{row}"].font = Font(bold=True)
+            row += 1
+            for k2, v2 in v.items():
+                ws[f"A{row}"] = f" - {k2}"
+                ws[f"B{row}"] = str(v2)
+                row += 1
+        else:
+            ws[f"A{row}"] = k
+            ws[f"B{row}"] = str(v)
+            row += 1
+
+    # Simple style
+    for c in ["A", "B"]:
+        ws.column_dimensions[c].width = 45
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+--------------------------------------------------------------------
+# app.py
+import streamlit as st
+from engine import Inputs, evalua
+from excel_io import read_parametros
+from report_xlsx import build_evidence_xlsx
+
+st.set_page_config(page_title="Burden / Selección TC – EMCALI", layout="wide")
+
+st.title("Burden + Selección de TC (Semidirecta / Indirecta)")
+st.caption("App para validar burden, kVA vs TC y TC recomendado. Compatible con tu plantilla de Parametros. [1](blob:https://outlook.office.com/6bd3cbb4-764f-4d31-9cc7-a91d77be2dd9)")
+
+uploaded = st.file_uploader("Sube el Excel de plantilla", type=["xlsx"])
+
+col1, col2 = st.columns(2)
+
+if uploaded:
+    xbytes = uploaded.read()
+    params = read_parametros(xbytes)
+
+    with col1:
+        st.subheader("Entradas (desde Excel)")
+        tipo = st.selectbox("Tipo de medida", ["Semidirecta", "Indirecta"], index=0 if params.get("Tipo de medida")=="Semidirecta" else 1)
+        fases = int(params.get("Número de fases", 3) or 3)
+        kva_trf = float((params.get("Transformador") and params.get("Transformador")) or params.get("kVA del transformador (referencia)", 0) or 0)
+
+        # En tu plantilla el transformador aparece con filas (ID, fases, kVA). [1](blob:https://outlook.office.com/6bd3cbb4-764f-4d31-9cc7-a91d77be2dd9)
+        # Si ya lo tienes en celdas separadas, aquí puedes capturarlas:
+        kva_trf = float(params.get("kVA del transformador (referencia)", params.get("Transformador kVA", 0)) or 0)
+
+        ib = float(params.get("Ib secundaria TC [A]", 5) or 5)
+        va_tc = float(params.get("VA nominal TC [VA]", 5) or 5)
+        burden_med = float(params.get("Burden medidor (circuito de corriente) VA/fase", 0.2) or 0.2)
+        burden_otros = float(params.get("Burden otros equipos VA/fase", 0) or 0)
+        r_ohm_km = float(params.get("Resistencia seleccionada (Ω/km)", 0) or 0)
+        long_km = float(params.get("Longitud conductor ida TC→medidor [km]", 0) or 0)
+
+        # TC instalado (si lo trae la plantilla)
+        tc_rel = None
+        # en tu Parametros hay D17/D18/D19 como relación. Si no viene en dict, el usuario la elige:
+        tc_rel = st.text_input("Relación TC instalada (ej: 150/5 o 10/5)", value=params.get("TC1 Relación", "150/5"))
+
+        circuito_bt = None
+        kv = None
+        if tipo == "Semidirecta":
+            circuito_bt = st.selectbox("Circuito BT", ["3x120/208","3x127/220","3x254/440","120/240"], index=1)
+        else:
+            kv = st.selectbox("Nivel de tensión (kV)", [11.4, 13.2, 34.5], index=1)
+
+        inp = Inputs(
+            tipo_medida=tipo,
+            fases=fases,
+            kva_transformador=kva_trf,
+            circuito_bt=circuito_bt,
+            kv=kv,
+            tc_relacion=tc_rel.strip() if tc_rel else None,
+            ib_sec=ib,
+            va_tc=va_tc,
+            burden_medidor_va_fase=burden_med,
+            burden_otros_va_fase=burden_otros,
+            r_ohm_km=r_ohm_km,
+            long_ida_km=long_km
+        )
+
+    results = evalua(inp)
+
+    with col2:
+        st.subheader("Resultados")
+        st.metric("Resultado", results["resultado"])
+        st.write("**TC recomendado:**", results["tc_recomendado"])
+        st.write("**kVA máx (tabla):**", results["kva_max_tabla"])
+        st.write("**kVA máx por TC instalado:**", results["kva_max_tc_instalado"])
+        st.write("**Burden total (VA/fase):**", round(results["burden"]["va_total"], 4))
+        st.write("**% Utilización TC:**", f'{results["burden"]["utilizacion"]*100:.2f}%')
+
+        st.write("### Cumplimientos")
+        st.json(results["cumple"])
+
+        # Descargar evidencia
+        evidence_bytes = build_evidence_xlsx(inp.__dict__, results)
+        st.download_button(
+            label="Descargar Excel evidencia",
+            data=evidence_bytes,
+            file_name="Evidencia_Burden_TC.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+else:
+    st.info("Sube un Excel para comenzar (Plantilla_Burden_EMCALI_Impresion.xlsx).")
+
+-------------------------------------------------------------------------
+
+# Burden / Selección TC – Streamlit
+
+## 1) Instalar
+pip install -r requirements.txt
+
+## 2) Ejecutar
+streamlit run app.py
+
+## 3) Uso
+1. Subir la plantilla Excel (ej. Plantilla_Burden_EMCALI_Impresion.xlsx)
+2. Revisar/ajustar entradas en el panel
+3. Ver resultado APTO/NO APTO + TC recomendado
+4. Descargar Excel evidencia
+``
+
+
+
+PROMPT MAESTRO (copiar/pegar tal cual)
+Rol del asistente / objetivo
+Eres un ingeniero de software senior especializado en Python, Streamlit y automatización de Excel con openpyxl y pandas. Debes construir una aplicación web interna para EMCALI que valide y evidencie:
+
+Burden de TC por fase (medición semidirecta/indirecta)
+Selección automática y validación de relación de TC con base en Tablas de rangos (Tabla 4 y Tabla 5)
+Validación de kVA del transformador vs kVA máximo permitido por la relación TC instalada
+Generación de evidencias y descarga de Excel sin macros
+
+Contexto del Excel de entrada (plantilla base)
+El usuario trabaja con una plantilla Excel denominada “Plantilla_Burden_EMCALI_Impresion.xlsx” con una hoja principal llamada “Parametros” donde las etiquetas están en la columna A y los valores en la columna B (p. ej., “Tipo de medida”, “Número de fases”, “Ib secundaria TC [A]”, “VA nominal TC [VA]”, datos de TC1–TC3, Transformador, etc.). 1
+La hoja también contiene tabla de conductores (Ω/km) y datos de longitud en km. 1
+
+1) Requisitos funcionales (lo que la app debe hacer)
+1.1 Carga y lectura del Excel
+
+Permitir subir un .xlsx (la plantilla).
+Leer la hoja Parametros detectando pares Etiqueta (col A) → Valor (col B).
+Extraer, como mínimo:
+
+Tipo de medida: Semidirecta / Indirecta
+Nº de fases (1 o 3)
+Ib secundaria TC (A)
+VA nominal del TC (VA)
+Burden medidor (VA/fase)
+Burden otros equipos (VA/fase)
+Longitud conductor ida (km)
+Resistencia conductor (Ω/km)
+Relación TC instalada por fase (si existen TC1–TC3; si no, pedirlo manual)
+Transformador: identificador, fases, kVA (si el Excel lo guarda en varias celdas, mapearlo; si está concatenado, parsearlo)
+
+
+
+1.2 Cálculo de burden (por fase)
+Debe calcular:
+
+Longitud lazo: L_lazo = 2 * L_ida (en km)
+Resistencia lazo: R_lazo = Ω/km * L_lazo
+Burden cable: VA_cable = Ib^2 * R_lazo
+Burden total por fase:
+VA_total = VA_medidor + VA_cable + VA_otros
+Utilización del TC:
+%util = VA_total / VA_TC
+
+Debe devolver:
+
+R_lazo, VA_cable, VA_total, %util
+Cumple burden: VA_total <= VA_TC
+(Opcional) criterio adicional: “cumple %util entre 25% y 100%” si se requiere.
+
+1.3 Selección de TC recomendado por tablas (según tipo de medida)
+Implementar selección automática (por rangos de kVA):
+Semidirecta (Tabla 4)
+
+Depende del Circuito BT (p. ej. 3x120/208, 3x127/220, 3x254/440, 120/240).
+Con kVA_transformador, buscar el rango donde kVA_min <= kVA <= kVA_max.
+Devolver:
+
+TC_recomendado (relación)
+kVA_max_autorizado (del rango encontrado)
+
+
+
+Indirecta (Tabla 5)
+
+Depende del nivel de tensión (kV) (11,4 / 13,2 / 34,5).
+Con kVA_transformador, buscar rango y devolver:
+
+TC_recomendado
+kVA_max_autorizado
+
+
+
+1.4 Validaciones clave
+La app debe comparar y producir banderas:
+
+Cumple_TC_recomendado: TC_instalado == TC_recomendado
+kVA_max_por_TC_instalado: buscar por relación instalada (exact match) y obtener kVA_max permitido
+Cumple_kVA_vs_TC_instalado: kVA_transformador <= kVA_max_por_TC_instalado
+Resultado final:
+APTO si (Cumple burden) AND (Cumple kVA vs TC instalado) AND (Cumple TC vs recomendado)
+si no, NO APTO
+
+1.5 Soporte de múltiples medidas (varios puntos de medición)
+
+Permitir indicar “Número de medidas/puntos”.
+Permitir ingresar una lista de relaciones TC por cada medida (o cargarla).
+Calcular kVA_max_por_medida y sumar:
+
+kVA_total_autorizado = SUM(kVA_max_por_medida)
+
+
+Comparar con kVA del transformador (si aplica al criterio del cliente).
+
+
+2) Requisitos de interfaz (Streamlit)
+La interfaz debe tener:
+
+Panel de subida de archivo
+Un panel de inputs editables (si faltan datos del Excel)
+Un panel de resultados:
+
+Resultado final (APTO/NO APTO)
+Burden por fase y %util
+TC recomendado y kVA max autorizado
+kVA max permitido por TC instalado
+Lista de cumplimiento (True/False) de cada validación
+
+
+Tablas y métricas claras (sin ambigüedad)
+Un botón para descargar un Excel de evidencia (sin macros)
+
+
+3) Excel de evidencia (salida)
+Generar un .xlsx descargable que incluya:
+
+Hoja “Evidencia” con:
+
+Inputs usados
+Resultados por fase
+TC recomendado / kVA max
+Comparaciones y estado final
+
+
+Incluir hojas “Tabla4_Semi” y “Tabla5_Ind” con los rangos usados como evidencia
+Incluir un bloque de “celdas auxiliares visibles” si se desea reproducir la lógica en Excel
+No usar macros y evitar elementos que provoquen “reparación de archivo” (minimizar dibujos/gráficos).
+
+
+4) Requisitos técnicos
+
+Python 3.10+
+Paquetes: streamlit, pandas, openpyxl
+Código modular con estructura:
+
+tables.py (Tablas 4 y 5)
+excel_io.py (lectura de Parametros)
+engine.py (cálculos burden + selección TC + validaciones)
+report_xlsx.py (generación de evidencia)
+app.py (interfaz Streamlit)
+
+
+Sin uso de INDIRECTO() en Excel generado si no es necesario.
+Asegurar compatibilidad con Excel en español (separador ; si se escriben fórmulas).
+
+
+5) Entregables que debes generar
+
+Código completo del proyecto (archivos separados)
+requirements.txt
+Instrucciones en README.md
+Aplicación Streamlit funcional
+Exportación de Excel evidencia funcional
+
+
+6) Criterios de aceptación (pruebas)
+
+Con un Excel de prueba que contenga:
+
+Tipo medida = Semidirecta
+Circuito BT = 3x127/220
+kVA transformador = 112,5
+TC instalado = 150/5
+
+
+La app debe:
+
+calcular burden y %util
+seleccionar TC recomendado desde Tabla4
+validar si TC coincide y si kVA está dentro del máximo permitido por esa relación
+marcar APTO/NO APTO con trazabilidad.
+
+
+
+
+✅ “PROMPT corto” alternativo (si lo quieres en una sola frase)
+“Construye una app en Streamlit que lea mi Excel Parametros (etiquetas col A, valores col B), calcule burden por fase (Ib²·R_lazo + VA medidor + VA otros), seleccione TC recomendado y kVA máximo por rangos usando Tabla 4 (Semidirecta por circuito BT) y Tabla 5 (Indirecta por kV), valide TC instalado vs recomendado y kVA transformador vs kVA máximo, muestre APTO/NO APTO, y genere un Excel evidencia sin macros con inputs, resultados y tablas usadas.”
+
