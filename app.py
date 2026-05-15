@@ -96,7 +96,8 @@ def get_html_print_content(inp, results, logo_b64=""):
             <div class="info-item"><strong>kVA Transformador:</strong> {inp.kva_transformador} kVA</div>
             <div class="info-item"><strong>Transformador:</strong> {inp.transformador_id} ({inp.transformador_marca})</div>
             <div class="info-item"><strong>Burden Medidor:</strong> {inp.burden_medidor_va_fase} VA/fase</div>
-            <div class="info-item"><strong>Resistencia Cond.:</strong> {inp.r_ohm_km} Ω/km</div>
+            <div class="info-item"><strong>Resistencia R:</strong> {results['burden']['r_usada']} Ω/km</div>
+            <div class="info-item"><strong>Reactancia X:</strong> {results['burden']['x_usada']} Ω/km</div>
             <div class="info-item"><strong>Longitud ida:</strong> {inp.long_ida_km} Km</div>
             <div class="info-item"><strong>Fecha Elaboración:</strong> {inp.fecha_elaboracion}</div>
         </div>
@@ -172,14 +173,22 @@ if pasted_text:
         with c2:
             ib = st.number_input("Ib secundaria TC [A]", value=5.0, min_value=0.0)
             va_tc = st.number_input("VA nominal TC [VA]", value=5.0, min_value=0.0)
-            r_ohm_km = st.number_input("Resistencia (Ω/km)", value=0.0, format="%.4f")
-            long_km = st.number_input("Longitud ida (km)", value=0.0, format="%.4f")
+            long_km = st.number_input("Longitud conductor (km)", value=0.0, format="%.4f", help="Distancia de ida entre los transformadores y el medidor.")
+            fp_sistema = st.slider("Factor de Potencia", 0.7, 1.0, 0.9, 0.01)
 
         exp_burden = st.expander("Ver otros parámetros de Burden")
         with exp_burden:
-            b1, b2 = st.columns(2)
-            burden_med = b1.number_input("Burden medidor (VA/fase)", value=0.2)
-            burden_otros = b2.number_input("Burden otros (VA/fase)", value=0.0)
+            b1, b2, b3 = st.columns(3)
+            burden_med = b1.number_input("Burden Medidor (VA)", value=0.2)
+            burden_otros = b2.number_input("Otros (Módem/etc)", value=0.0)
+            va_tp_nom = b3.number_input("VA nominal TP", value=50.0)
+
+        st.markdown("---")
+        st.write("📂 **Parámetros del Conductor (IEEE 241)**")
+        ca1, ca2, ca3 = st.columns(3)
+        material = ca1.selectbox("Material", ["Cobre", "Aluminio"])
+        conduit = ca2.selectbox("Ducto (Conduit)", ["PVC", "Acero", "Aluminio"])
+        calibre = ca3.selectbox("Calibre AWG", ["14 AWG", "12 AWG", "10 AWG", "8 AWG"], index=1)
 
         if tipo == "Semidirecta":
             circuito_bt = st.selectbox("Circuito BT", ["3x120/208","3x127/220","3x254/440","120/240"], index=1)
@@ -228,13 +237,18 @@ if pasted_text:
                 tc_series.append(s)
                 tc_marcas.append(m)
 
+    # Inicializar r_ohm_km y x_ohm_km, ya que ahora se obtienen de la tabla en engine.py
+    r_ohm_km = 0.0
+    x_ohm_km = 0.0
     # -------------------------------------------------
     inp = Inputs(
         tipo_medida=tipo, fases=fases, kva_transformador=kva_trf,
         circuito_bt=circuito_bt, kv=kv,
         tc_relacion=tc_rel.strip().replace(' A', '').replace('A', '') if tc_rel else None, # Limpiar espacios y el sufijo ' A'
         ib_sec=ib, va_tc=va_tc, burden_medidor_va_fase=burden_med,
-        burden_otros_va_fase=burden_otros, r_ohm_km=r_ohm_km, long_ida_km=long_km,
+        burden_otros_va_fase=burden_otros, r_ohm_km=r_ohm_km, x_ohm_km=x_ohm_km, long_ida_km=long_km,
+        material_conductor=material, tipo_conduit=conduit, calibre_conductor=calibre,
+        factor_potencia=fp_sistema, va_tp_nominal=va_tp_nom,
         medidor=medidor, calibre_conductor=calibre_conductor, va_conductor_input=va_conductor_input,
         clase_exactitud=clase_exactitud, transformador_id=transformador_id,
         transformador_marca=transformador_marca, direccion=direccion,

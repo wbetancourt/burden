@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional
-from tables import TABLA4_SEMI, TABLA5_IND
+from tables import TABLA4_SEMI, TABLA5_IND, TABLA_IMPEDANCIAS_IEEE
 import datetime # Import datetime for automatic date
+import math
 
 @dataclass
 class Inputs:
@@ -16,7 +17,11 @@ class Inputs:
     burden_medidor_va_fase: float = 0.2
     burden_otros_va_fase: float = 0.0
     r_ohm_km: float = 0.0
+    x_ohm_km: float = 0.0  # Nueva reactancia
     long_ida_km: float = 0.0
+    material_conductor: str = "Cobre"
+    tipo_conduit: str = "PVC"
+    factor_potencia: float = 0.9
     # --- Nuevos campos solicitados por el usuario ---
     medidor: Optional[str] = None
     serie_medidor: Optional[str] = None
@@ -33,6 +38,10 @@ class Inputs:
     proyecto: Optional[str] = None # Nombre del proyecto
     tc_marcas: List[str] = None # Lista para marcas de TC por fase
     tc_series: List[str] = None # Lista para series de TC por fase
+    # Campos para TP (Medición Indirecta)
+    tp_relacion: Optional[str] = None
+    va_tp_nominal: float = 50.0
+    clase_exactitud_tp: str = "0.2S"
     # -------------------------------------------------
 
 def _pick_range(value: float, ranges: List[Tuple[float, float, str]]) -> Tuple[str, float]:
@@ -96,26 +105,57 @@ def kva_max_por_tc_instalado(inp: Inputs) -> Optional[float]:
             return float(kmax)
     return None
 
-def burden_por_fase(inp: Inputs) -> Dict[str, float]:
+def calcular_impedancia_y_error(inp: Inputs) -> Dict[str, any]:
     """
-    Burden por fase: medidor + cables + otros
-    Cable: I^2 * R_lazo; R_lazo = (2*L[km]) * (ohm/km)
+    Calcula Burden TC, TP y Error de tensión basado en IEEE 241.
     """
-    r_lazo = (2 * inp.long_ida_km) * inp.r_ohm_km
-    va_cable = (inp.ib_sec ** 2) * r_lazo
-    va_total = inp.burden_medidor_va_fase + va_cable + inp.burden_otros_va_fase
-    utiliz = va_total / inp.va_tc if inp.va_tc else 0.0
+    # 1. Obtención de R y X de tablas si el calibre existe
+    r = inp.r_ohm_km
+    x = inp.x_ohm_km
+    
+    try:
+        vals = TABLA_IMPEDANCIAS_IEEE.get(inp.material_conductor, {}).get(inp.tipo_conduit, {}).get(inp.calibre_conductor)
+        if vals:
+            r, x = vals
+    except:
+        pass
+
+    # 2. Impedancia del cable (Z = R + jX)
+    # Para TC se usa ida y retorno (2L)
+    r_total_tc = r * (2 * inp.long_ida_km)
+    x_total_tc = x * (2 * inp.long_ida_km)
+    z_mag_tc = math.sqrt(r_total_tc**2 + x_total_tc**2)
+    
+    # 3. Burden TC
+    va_cable_tc = (inp.ib_sec ** 2) * z_mag_tc
+    va_total_tc = inp.burden_medidor_va_fase + va_cable_tc + inp.burden_otros_va_fase
+    utiliz_tc = va_total_tc / inp.va_tc if inp.va_tc else 0.0
+
+    # 4. Caída de tensión (Error TP) - IEEE 241 Formula
+    # DeltaV = I * (R*cos(theta) + X*sin(theta))
+    theta = math.acos(inp.factor_potencia)
+    i_sec_tp = 0.5 # Corriente típica secundaria TP (estimada para carga nominal)
+    
+    # Para TP usualmente se analiza la caída de tensión (ida)
+    r_tp = r * inp.long_ida_km
+    x_tp = x * inp.long_ida_km
+    dv = i_sec_tp * (r_tp * math.cos(theta) + x_tp * math.sin(theta))
+    v_nom_sec = 120.0 / math.sqrt(3) if inp.fases == 3 else 120.0
+    error_v_porc = (dv / v_nom_sec) * 100 if v_nom_sec else 0
+
     return {
-        "r_lazo_ohm": r_lazo,
-        "va_cable": va_cable,
-        "va_total": va_total,
-        "utilizacion": utiliz
+        "va_cable": va_cable_tc,
+        "va_total": va_total_tc,
+        "utilizacion": utiliz_tc,
+        "error_tp_porc": error_v_porc,
+        "r_usada": r,
+        "x_usada": x
     }
 
 def evalua(inp: Inputs) -> Dict:
     rec = tc_recomendado(inp)
     kva_inst = kva_max_por_tc_instalado(inp)
-    calc_burden = burden_por_fase(inp)
+    calc_eng = calcular_impedancia_y_error(inp)
 
     # Cálculo de kVA autorizados y restantes (Fórmula técnica solicitada)
     kva_autorizado_calc = 0.0
@@ -143,7 +183,7 @@ def evalua(inp: Inputs) -> Dict:
     # Validaciones técnicas globales
     cumple_kva_tc = (kva_inst is not None) and (inp.kva_transformador <= kva_inst)
     cumple_tc_rec = (inp.tc_relacion is not None) and (rec["tc"] is not None) and (str(inp.tc_relacion).replace(" ","") == str(rec["tc"]).replace(" ",""))
-    util_gen = calc_burden["utilizacion"]
+    util_gen = calc_eng["utilizacion"]
     cumple_burden_general = (util_gen >= 0.25) and (util_gen <= 1.00)
 
     # Resultados por fase
@@ -174,7 +214,7 @@ def evalua(inp: Inputs) -> Dict:
             "serie": serie,
             "marca": marca,
             "va_tc": inp.va_tc,
-            "burden_total": round(calc_burden["va_total"], 4),
+            "burden_total": round(calc_eng["va_total"], 4),
             "utilizacion": f"{util_gen*100:.2f}%",
             "util_float": util_gen * 100, # Para el gráfico
             "cumple": "SÍ" if fase_cumple_burden else "NO",
@@ -190,7 +230,8 @@ def evalua(inp: Inputs) -> Dict:
         "kva_max_tc_instalado": kva_inst,
         "kva_autorizado_calc": round(kva_autorizado_calc, 2),
         "kva_restantes": round(kva_restantes, 2),
-        "burden": calc_burden, # Mantener para compatibilidad si se usa en otro lado
+        "burden": calc_eng,
+        "error_tp": round(calc_eng["error_tp_porc"], 4),
         "detalle_fases": res_fases,
         "cumple": {
             "burden": cumple_burden_general,

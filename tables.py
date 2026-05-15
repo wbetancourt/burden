@@ -41,3 +41,21 @@ TABLA5_IND = {
         (7171, 10756, "150/5"), (10757, 13445, "200/5")
     ],
 }
+
+# Valores típicos según IEEE Std 241 / NEC Cap 9 (Ohm/km)
+# Estructura: [Material][Conduit][Calibre] = (R, X)
+TABLA_IMPEDANCIAS_IEEE = {
+    "Cobre": {
+        "PVC": {
+            "14 AWG": (10.1706, 0.1640),
+            "12 AWG": (6.3976, 0.1575),
+            "10 AWG": (4.0026, 0.1476),
+            "8 AWG": (2.5591, 0.1444),
+        },
+        "Acero": {
+            "14 AWG": (10.1706, 0.2067),
+            "12 AWG": (6.3976, 0.1969),
+            "10 AWG": (4.0026, 0.1837),
+        }
+    }
+}

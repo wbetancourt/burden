@@ -1,6 +1,13 @@
 __pycache__/
-.streamlit/
 .venv/
+env/
 venv/
-*.pyc
-.DS_Store
+.streamlit/
+
+# Ignorar archivos de datos temporales
+*.xlsx
+*.pdf
+
+# Mantener el logo y la plantilla si son necesarios
+!logoemcali.png
+!Plantilla_Burden_EMCALI_Impresion.xlsx
