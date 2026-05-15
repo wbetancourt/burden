@@ -249,7 +249,7 @@ if pasted_text:
         burden_otros_va_fase=burden_otros, r_ohm_km=r_ohm_km, x_ohm_km=x_ohm_km, long_ida_km=long_km,
         material_conductor=material, tipo_conduit=conduit, calibre_conductor=calibre,
         factor_potencia=fp_sistema, va_tp_nominal=va_tp_nom,
-        medidor=medidor, calibre_conductor=calibre_conductor, va_conductor_input=va_conductor_input,
+        medidor=medidor, va_conductor_input=va_conductor_input,
         clase_exactitud=clase_exactitud, transformador_id=transformador_id,
         transformador_marca=transformador_marca, direccion=direccion,
         fecha_elaboracion=fecha_elaboracion, contratista=contratista,
