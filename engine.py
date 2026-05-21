@@ -248,3 +248,5 @@ def calculate_normative_burden(data: Dict[str, Any]) -> Dict[str, Any]:
             "supuestos": "VADEVANADO despreciado según NTC 2205/2207"
         }
     }
+
+__all__ = ["Inputs", "evalua", "calculate_normative_burden"]
