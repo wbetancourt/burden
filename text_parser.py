@@ -83,3 +83,38 @@ def parse_extracted_text(text: str) -> Dict[str, Any]:
     # Estos se combinan en app.py para mayor flexibilidad
 
     return data
+    
+def parse_indirect_text(text: str) -> Dict[str, Any]:
+    """
+    Parsea el texto para encontrar parámetros de medida indirecta (JSON o etiquetas).
+    """
+    try:
+        # Intentar detectar un formato JSON primero
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            return json.loads(json_match.group(0).replace("'", '"'))
+    except:
+        pass
+
+    data = {}
+    # Patrones para búsqueda por etiquetas en el texto pegado
+    patterns = {
+        "longitud_m": r"(?:longitud_m|longitud)\D*([\d\.,]+)",
+        "resistencia_ohm_m": r"(?:resistencia_ohm_m|resistencia)\D*([\d\.,]+)",
+        "corriente_secundaria_A": r"(?:corriente_secundaria_A|corriente)\D*([\d\.,]+)",
+        "burden_medidor_VA": r"(?:burden_medidor_VA|burden del medidor)\D*([\d\.,]+)",
+        "numero_medidores": r"(?:numero_medidores|medidores)\D*(\d+)",
+        "tipo_transformador": r"(?:tipo_transformador|tipo)\D*(TC|TT)"
+    }
+
+    for key, pattern in patterns.items():
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            val = match.group(1).replace(',', '.')
+            if key == "tipo_transformador":
+                data[key] = val.upper()
+            elif key == "numero_medidores":
+                data[key] = int(val)
+            else:
+                data[key] = float(val)
+    return data
