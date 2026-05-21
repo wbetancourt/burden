@@ -1,4 +1,5 @@
 import re
+import json
 from typing import Dict, Any, Optional
 
 def parse_extracted_text(text: str) -> Dict[str, Any]:

@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 import re as std_re
 import base64
 from engine import Inputs, evalua, calculate_normative_burden
-from text_parser import parse_extracted_text
+from text_parser import parse_extracted_text, parse_indirect_text
 from report_xlsx import build_evidence_xlsx
 import datetime # Import datetime for automatic date
 
@@ -332,56 +332,26 @@ def render_main_module():
 def render_normative_module():
     st.subheader("Cálculo de Burden Normativo (CREG 038 / NTC 5019)")
     st.info("Este módulo realiza el cálculo estricto de Burden para sistemas de medida indirecta.")
-    # ... (el resto de la función se mantiene igual)
 
-def main():
-    st.set_page_config(page_title="Burden / Selección TC – EMCALI", layout="wide")
-
-    # Mostrar Logo y Título en la interfaz de Streamlit
-    if os.path.exists("logoemcali.png"):
-        st.image("logoemcali.png", width=150)
-    st.title("Burden + Selección de TC (Semidirecta / Indirecta)")
-    st.caption("Herramienta técnica para la validación de medición y selección de transformadores de corriente.")
-
-    # Créditos del desarrollador en la barra lateral
-    st.sidebar.markdown("### Información del Autor")
-    st.sidebar.markdown("---")
-    st.sidebar.write("👨‍💻 **Ingeniero Walter Andres Betancourt**")
-
-    # Menú de navegación
-    menu = st.sidebar.radio(
-        "Seleccione el Módulo",
-        ["Burden/Selección TC (Plantilla)", "Medida Indirecta CREG 038"],
-        index=0
-    )
-
-    if menu == "Burden/Selección TC (Plantilla)":
-        render_main_module()
-    else:
-        render_normative_module()
-
-if __name__ == "__main__":
-    main()
-def render_normative_module():
-    st.subheader("Cálculo de Burden Normativo (CREG 038 / NTC 5019)")
-    st.info("Este módulo realiza el cálculo estricto de Burden para sistemas de medida indirecta.")
+    pasted_text_ind = st.text_area("Pega aquí el contenido del documento de Word para Medida Indirecta", height=200)
+    params = parse_indirect_text(pasted_text_ind) if pasted_text_ind else {}
 
     with st.form("form_normativo"):
         c1, c2 = st.columns(2)
         with c1:
-            tipo_trf = st.selectbox("Tipo de Transformador", ["TC", "TT"])
-            corriente_sec = st.number_input("Corriente Secundaria (A)", value=5.0, step=4.0)
-            va_nom_tc = st.number_input("VA Nominal del TC", value=15.0)
-            burden_med = st.number_input("Burden del Medidor (VA)", value=0.35, format="%.4f")
+            tipo_trf = st.selectbox("Tipo de Transformador", ["TC", "TT"], index=0 if params.get("tipo_transformador", "TC") == "TC" else 1)
+            corriente_sec = st.number_input("Corriente Secundaria (A)", value=float(params.get("corriente_secundaria_A", 5.0)), step=4.0)
+            va_nom_tc = st.number_input("VA Nominal del TC", value=float(params.get("va_nominal_tc", 5.0)))
+            burden_med = st.number_input("Burden del Medidor (VA)", value=float(params.get("burden_medidor_VA", 0.35)), format="%.4f")
         
         with c2:
-            longitud = st.number_input("Longitud Total ida+retorno (m)", value=24.0)
-            resistencia = st.number_input("Resistencia AC RAC (Ω/m)", value=0.00625, format="%.6f")
-            n_medidores = st.radio("Número de Medidores", [1, 2], horizontal=True, help="Si hay respaldo, se duplica el burden del medidor")
+            longitud = st.number_input("Longitud Total ida+retorno (m)", value=float(params.get("longitud_m", 24.0)))
+            resistencia = st.number_input("Resistencia AC RAC (Ω/m)", value=float(params.get("resistencia_ohm_m", 0.00625)), format="%.6f")
+            n_medidores = st.radio("Número de Medidores", [1, 2], index=0 if params.get("numero_medidores", 1) == 1 else 1, horizontal=True)
         
         submit = st.form_submit_button("Calcular Burden Normativo")
 
-    if submit:
+    if submit or pasted_text_ind:
         data_input = {
             "longitud_m": longitud,
             "resistencia_ohm_m": resistencia,
@@ -438,3 +408,32 @@ def render_normative_module():
         
         with st.expander("Ver JSON de integración"):
             st.json(res)
+
+def main():
+    st.set_page_config(page_title="Burden / Selección TC – EMCALI", layout="wide")
+
+    # Mostrar Logo y Título en la interfaz de Streamlit
+    if os.path.exists("logoemcali.png"):
+        st.image("logoemcali.png", width=150)
+    st.title("Burden + Selección de TC (Semidirecta / Indirecta)")
+    st.caption("Herramienta técnica para la validación de medición y selección de transformadores de corriente.")
+
+    # Créditos del desarrollador en la barra lateral
+    st.sidebar.markdown("### Información del Autor")
+    st.sidebar.markdown("---")
+    st.sidebar.write("👨‍💻 **Ingeniero Walter Andres Betancourt**")
+
+    # Menú de navegación
+    menu = st.sidebar.radio(
+        "Seleccione el Módulo",
+        ["Burden/Selección TC (Plantilla)", "Medida Indirecta CREG 038"],
+        index=0
+    )
+
+    if menu == "Burden/Selección TC (Plantilla)":
+        render_main_module()
+    else:
+        render_normative_module()
+
+if __name__ == "__main__":
+    main()

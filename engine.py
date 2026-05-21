@@ -204,17 +204,23 @@ def calculate_normative_burden(data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Calcula el BURDEN de transformadores de medida bajo normativa CREG 038.
     """
-    L = data["longitud_m"]
-    RAC = data["resistencia_ohm_m"]
-    I = data["corriente_secundaria_A"]
-    VA_MED = data["burden_medidor_VA"]
-    N = data["numero_medidores"]
-    # tipo = data["tipo_transformador"] # Reservado para futuras expansiones TT
-    VA_NOM_TC = data.get("va_nominal_tc", 5.0) 
+    L = float(data.get("longitud_m", 0))
+    RAC = float(data.get("resistencia_ohm_m", 0))
+    I = float(data.get("corriente_secundaria_A", 5))
+    VA_MED = float(data.get("burden_medidor_VA", 0))
+    N = int(data.get("numero_medidores", 1))
+    tipo = data.get("tipo_transformador", "TC")
+    VA_NOM_TC = float(data.get("va_nominal_tc", 5.0)) 
 
     # 1. Cálculos base (Modelo Matemático)
-    # Se usa I^2 para coincidir con el ejemplo técnico proporcionado (P = I^2 * R)
-    va_conductor = (I ** 2) * (L * RAC)
+    # Aunque la descripción diga I * L * RAC, para obtener 3.75 con I=5, L=24, RAC=0.00625
+    # se requiere I^2 * L * RAC, que es la fórmula física de carga en VA (P = I^2 * Z).
+    if tipo == "TC":
+        va_conductor = (I ** 2) * (L * RAC)
+    else:
+        # Simplificación para TT si se asume carga por impedancia
+        va_conductor = L * RAC
+
     va_medidor_total = VA_MED * N
     va_total = va_medidor_total + va_conductor
 
@@ -226,8 +232,7 @@ def calculate_normative_burden(data: Dict[str, Any]) -> Dict[str, Any]:
     porcentaje_uso = (va_total / VA_NOM_TC) * 100
     cumple_rango = 25.0 <= porcentaje_uso <= 100.0
     
-    mensaje = "El burden se encuentra dentro del rango permitido (25%-100%)" if cumple_rango else \
-              f"Carga fuera de rango normativo: {porcentaje_uso:.1f}% (Min 25% - Max 100%)"
+    mensaje = "El burden se encuentra dentro del rango permitido (25%-100%)" if cumple_rango else "El burden se encuentra fuera del rango permitido (25%-100%)"
 
     return {
         "calculos": {
@@ -244,8 +249,8 @@ def calculate_normative_burden(data: Dict[str, Any]) -> Dict[str, Any]:
             "mensaje": mensaje
         },
         "detalle": {
-            "formula_usada": "VATOTAL = (VAMEDIDOR * N) + (I² * L * RAC)",
-            "supuestos": "VADEVANADO despreciado según NTC 2205/2207"
+            "formula_usada": "VATOTAL = VAMEDIDOR + VACONDUCTOR",
+            "supuestos": "VADEVANADO despreciado"
         }
     }
 
