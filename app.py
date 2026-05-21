@@ -4,7 +4,7 @@ import streamlit.components.v1 as components
 import plotly.graph_objects as go
 import re as std_re
 import base64
-from engine import Inputs, evalua
+from engine import Inputs, evalua, calculate_normative_burden
 from text_parser import parse_extracted_text
 from report_xlsx import build_evidence_xlsx
 import datetime # Import datetime for automatic date
@@ -142,6 +142,20 @@ st.sidebar.markdown("### Información del Autor")
 st.sidebar.markdown("---")
 st.sidebar.write("👨‍💻 **Ingeniero Walter Andres Betancourt**")
 
+# Menú de navegación
+menu = st.sidebar.radio(
+    "Seleccione el Módulo",
+    ["Burden/Selección TC (Plantilla)", "Medida Indirecta CREG 038"],
+    index=0
+)
+
+if menu == "Burden/Selección TC (Plantilla)":
+    render_main_module()
+else:
+    render_normative_module()
+
+def render_main_module():
+    st.subheader("Análisis de Burden y Selección de TC (Basado en Plantilla)")
 pasted_text = st.text_area("Pega aquí el contenido del documento de Word", height=300)
 
 if pasted_text:
@@ -339,3 +353,80 @@ if pasted_text:
     )
 else:
     st.info("Pega el contenido del documento de Word para comenzar.")
+
+def render_normative_module():
+    st.subheader("Cálculo de Burden Normativo (CREG 038 / NTC 5019)")
+    st.info("Este módulo realiza el cálculo estricto de Burden para sistemas de medida indirecta.")
+
+    with st.form("form_normativo"):
+        c1, c2 = st.columns(2)
+        with c1:
+            tipo_trf = st.selectbox("Tipo de Transformador", ["TC", "TT"])
+            corriente_sec = st.number_input("Corriente Secundaria (A)", value=5.0, step=4.0)
+            va_nom_tc = st.number_input("VA Nominal del TC", value=15.0)
+            burden_med = st.number_input("Burden del Medidor (VA)", value=0.35, format="%.4f")
+        
+        with c2:
+            longitud = st.number_input("Longitud Total ida+retorno (m)", value=24.0)
+            resistencia = st.number_input("Resistencia AC RAC (Ω/m)", value=0.00625, format="%.6f")
+            n_medidores = st.radio("Número de Medidores", [1, 2], horizontal=True, help="Si hay respaldo, se duplica el burden del medidor")
+        
+        submit = st.form_submit_button("Calcular Burden Normativo")
+
+    if submit:
+        data_input = {
+            "longitud_m": longitud,
+            "resistencia_ohm_m": resistencia,
+            "corriente_secundaria_A": corriente_sec,
+            "burden_medidor_VA": burden_med,
+            "numero_medidores": n_medidores,
+            "tipo_transformador": tipo_trf,
+            "va_nominal_tc": va_nom_tc
+        }
+
+        res = calculate_normative_burden(data_input)
+
+        # Visualización de Resultados
+        st.divider()
+        col_res1, col_res2 = st.columns([1, 1])
+
+        with col_res1:
+            st.write("### Cálculos Realizados")
+            st.metric("VA Conductor", f"{res['calculos']['VACONDUCTOR']} VA")
+            st.metric("VA Medidor Total", f"{res['calculos']['VAMEDIDOR_TOTAL']} VA")
+            st.metric("Burden Total (VATOTAL)", f"{res['calculos']['VATOTAL']} VA")
+
+        with col_res2:
+            st.write("### Selección y Validación")
+            st.write(f"**Burden Normalizado Sugerido:** {res['seleccion']['burden_normalizado']} VA")
+            
+            # Gauge de Porcentaje de Uso
+            fig = go.Figure(go.Indicator(
+                mode = "gauge+number",
+                value = res['seleccion']['porcentaje_uso'],
+                title = {'text': "% Carga del TC"},
+                gauge = {
+                    'axis': {'range': [0, 120]},
+                    'bar': {'color': "black"},
+                    'steps': [
+                        {'range': [0, 25], 'color': "red"},
+                        {'range': [25, 100], 'color': "green"},
+                        {'range': [100, 120], 'color': "red"}
+                    ],
+                    'threshold': {
+                        'line': {'color': "blue", 'width': 4},
+                        'thickness': 0.75,
+                        'value': 100
+                    }
+                }
+            ))
+            fig.update_layout(height=250, margin=dict(l=20, r=20, t=50, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+
+        if res['validaciones']['cumple_rango']:
+            st.success(f"✅ {res['validaciones']['mensaje']}")
+        else:
+            st.error(f"❌ {res['validaciones']['mensaje']}")
+        
+        with st.expander("Ver JSON de integración"):
+            st.json(res)

@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 from tables import TABLA4_SEMI, TABLA5_IND
 import datetime # Import datetime for automatic date
 
@@ -198,4 +198,53 @@ def evalua(inp: Inputs) -> Dict:
             "tc_vs_recomendado": cumple_tc_rec
         },
         "resultado": "cumple" if apto else "NO cumple"
+    }
+
+def calculate_normative_burden(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Calcula el BURDEN de transformadores de medida bajo normativa CREG 038.
+    """
+    L = data["longitud_m"]
+    RAC = data["resistencia_ohm_m"]
+    I = data["corriente_secundaria_A"]
+    VA_MED = data["burden_medidor_VA"]
+    N = data["numero_medidores"]
+    # tipo = data["tipo_transformador"] # Reservado para futuras expansiones TT
+    VA_NOM_TC = data.get("va_nominal_tc", 5.0) 
+
+    # 1. Cálculos base (Modelo Matemático)
+    # Se usa I^2 para coincidir con el ejemplo técnico proporcionado (P = I^2 * R)
+    va_conductor = (I ** 2) * (L * RAC)
+    va_medidor_total = VA_MED * N
+    va_total = va_medidor_total + va_conductor
+
+    # 2. Selección de Burden Normalizado [2.5, 5, 10, 15, 30]
+    normalizados = [2.5, 5, 10, 15, 30]
+    burden_normalizado = next((val for val in normalizados if val >= va_total), normalizados[-1])
+
+    # 3. Validaciones Normativas (25% - 100%)
+    porcentaje_uso = (va_total / VA_NOM_TC) * 100
+    cumple_rango = 25.0 <= porcentaje_uso <= 100.0
+    
+    mensaje = "El burden se encuentra dentro del rango permitido (25%-100%)" if cumple_rango else \
+              f"Carga fuera de rango normativo: {porcentaje_uso:.1f}% (Min 25% - Max 100%)"
+
+    return {
+        "calculos": {
+            "VACONDUCTOR": round(va_conductor, 4),
+            "VAMEDIDOR_TOTAL": round(va_medidor_total, 4),
+            "VATOTAL": round(va_total, 4)
+        },
+        "seleccion": {
+            "burden_normalizado": burden_normalizado,
+            "porcentaje_uso": round(porcentaje_uso, 2)
+        },
+        "validaciones": {
+            "cumple_rango": cumple_rango,
+            "mensaje": mensaje
+        },
+        "detalle": {
+            "formula_usada": "VATOTAL = (VAMEDIDOR * N) + (I² * L * RAC)",
+            "supuestos": "VADEVANADO despreciado según NTC 2205/2207"
+        }
     }
