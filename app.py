@@ -75,7 +75,7 @@ def get_html_print_content(inp, results, logo_b64=""):
             th {{ background-color: #004b87; color: white; }}
             .metrics {{ display: flex; justify-content: space-around; background: #eee; padding: 10px; border-radius: 8px; margin-bottom: 20px; }}
             .metric-item {{ text-align: center; }}
-            .gauges-container {{ text-align: center; margin-top: 30px; }}
+            .gauges-container {{ display: flex; flex-direction: column; align-items: center; margin-top: 30px; width: 100%; }}
             @media print {{ .no-print {{ display: none; }} }}
         </style>
     </head>
@@ -113,7 +113,9 @@ def get_html_print_content(inp, results, logo_b64=""):
 
         <div class="gauges-container">
             <h3>Gráficos de Utilización</h3>
-            {gauges_html}
+            <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; width: 100%;">
+                {gauges_html}
+            </div>
         </div>
 
         <script>
@@ -170,7 +172,7 @@ def get_normative_html_print_content(data_input, results, logo_b64=""):
             .status-no {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
             .metrics-container {{ display: flex; justify-content: space-around; background: #eee; padding: 15px; border-radius: 8px; }}
             .metric-card {{ text-align: center; }}
-            .gauge-container {{ text-align: center; margin-top: 30px; }}
+            .gauge-container {{ display: flex; flex-direction: column; align-items: center; margin-top: 30px; width: 100%; }}
         </style>
     </head>
     <body>
@@ -211,7 +213,9 @@ def get_normative_html_print_content(data_input, results, logo_b64=""):
 
         <div class="gauge-container">
             <h3>Gráfico de Carga del Transformador</h3>
-            {gauge_html}
+            <div style="display: flex; justify-content: center; width: 100%;">
+                {gauge_html}
+            </div>
         </div>
 
         <script>
