@@ -25,13 +25,15 @@ def build_evidence_xlsx(inp_dict: dict, results: dict) -> bytes:
     ws[f"A{row}"].font = Font(bold=True)
     row += 1
 
-    ws[f"A{row}"] = "kVA Autorizados (Calculado)"
-    ws[f"B{row}"] = results.get("kva_autorizado_calc")
-    row += 1
+    if "kva_autorizado_calc" in results:
+        ws[f"A{row}"] = "kVA Autorizados (Calculado)"
+        ws[f"B{row}"] = results.get("kva_autorizado_calc")
+        row += 1
 
-    ws[f"A{row}"] = "kVA Restantes"
-    ws[f"B{row}"] = results.get("kva_restantes")
-    row += 1
+    if "kva_restantes" in results:
+        ws[f"A{row}"] = "kVA Restantes"
+        ws[f"B{row}"] = results.get("kva_restantes")
+        row += 1
 
     ws[f"A{row}"] = "RESULTADO FINAL"
     ws[f"B{row}"] = results["resultado"]
@@ -39,21 +41,22 @@ def build_evidence_xlsx(inp_dict: dict, results: dict) -> bytes:
     row += 2
 
     # Detalle por fase en tabla
-    ws[f"A{row}"] = "Detalle por Fase"
-    ws[f"A{row}"].font = Font(bold=True)
-    row += 1
-    
-    headers = ["Fase", "Relación", "Serie", "Marca", "VA TC", "Burden Total", "Utilización", "Cumple"]
-    for col, header in enumerate(headers, 1):
-        cell = ws.cell(row=row, column=col, value=header)
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
-    
-    row += 1
-    for fase in results["detalle_fases"]:
-        for col, key in enumerate(["fase", "relacion", "serie", "marca", "va_tc", "burden_total", "utilizacion", "cumple"], 1):
-            ws.cell(row=row, column=col, value=fase[key])
+    if "detalle_fases" in results:
+        ws[f"A{row}"] = "Detalle por Fase"
+        ws[f"A{row}"].font = Font(bold=True)
         row += 1
+        
+        headers = ["Fase", "Relación", "Serie", "Marca", "VA TC", "Burden Total", "Utilización", "Cumple"]
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col, value=header)
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+        
+        row += 1
+        for fase in results["detalle_fases"]:
+            for col, key in enumerate(["fase", "relacion", "serie", "marca", "va_tc", "burden_total", "utilizacion", "cumple"], 1):
+                ws.cell(row=row, column=col, value=fase[key])
+            row += 1
 
     # Simple style
     for c in ["A", "B"]:

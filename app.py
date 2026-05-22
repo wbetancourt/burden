@@ -129,6 +129,103 @@ def get_html_print_content(inp, results, logo_b64=""):
     """
     return base64.b64encode(html_template.encode()).decode()
 
+def get_normative_html_print_content(data_input, results, logo_b64=""):
+    """Genera una cadena HTML base64 para el reporte de medida indirecta (Normativo)."""
+    
+    # Generar el gauge para el HTML
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number",
+        value=results['seleccion']['porcentaje_uso'],
+        title={'text': f"% Carga del {data_input['tipo_transformador']}", 'font': {'size': 20}},
+        gauge={
+            'axis': {'range': [0, 120]},
+            'bar': {'color': "black"},
+            'steps': [
+                {'range': [0, 25], 'color': "#ff4b4b"},
+                {'range': [25, 100], 'color': "#09ab3b"},
+                {'range': [100, 120], 'color': "#ff4b4b"}
+            ],
+            'threshold': {'line': {'color': "blue", 'width': 4}, 'thickness': 0.75, 'value': 100}
+        }
+    ))
+    fig.update_layout(height=250, width=300, margin=dict(l=20, r=20, t=50, b=20))
+    gauge_html = fig.to_html(full_html=False, include_plotlyjs="cdn")
+
+    status_class = "status-cumple" if results['validaciones']['cumple_rango'] else "status-no"
+    
+    html_template = f"""
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {{ font-family: 'Segoe UI', Arial, sans-serif; margin: 40px; color: #333; }}
+            .header {{ text-align: center; border-bottom: 3px solid #004b87; padding-bottom: 10px; margin-bottom: 20px; }}
+            .logo {{ max-height: 80px; margin-bottom: 10px; }}
+            .header h1 {{ color: #004b87; margin: 0; font-size: 24px; }}
+            .info-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }}
+            .info-item {{ background: #f4f4f4; padding: 10px; border-radius: 4px; font-size: 14px; }}
+            .status-box {{ text-align: center; padding: 15px; font-size: 20px; font-weight: bold; border-radius: 8px; margin: 20px 0; }}
+            .status-cumple {{ background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }}
+            .status-no {{ background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }}
+            .metrics-container {{ display: flex; justify-content: space-around; background: #eee; padding: 15px; border-radius: 8px; }}
+            .metric-card {{ text-align: center; }}
+            .gauge-container {{ text-align: center; margin-top: 30px; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            {f'<img src="data:image/png;base64,{logo_b64}" class="logo">' if logo_b64 else ""}
+            <h1>EMCALI - REPORTE TÉCNICO BURDEN NORMATIVO</h1>
+            <p>Validación bajo CREG 038 / NTC 5019 (Medida Indirecta)</p>
+        </div>
+        
+        <div class="info-grid">
+            <div class="info-item"><strong>Tipo:</strong> {data_input['tipo_transformador']}</div>
+            <div class="info-item"><strong>Corriente Secundaria:</strong> {data_input['corriente_secundaria_A']} A</div>
+            <div class="info-item"><strong>VA Nominal {data_input['tipo_transformador']}:</strong> {data_input['va_nominal_tc']} VA</div>
+            <div class="info-item"><strong>Burden Medidor:</strong> {data_input['burden_medidor_VA']} VA</div>
+            <div class="info-item"><strong>Longitud:</strong> {data_input['longitud_m']} m</div>
+            <div class="info-item"><strong>Resistencia:</strong> {data_input['resistencia_ohm_m']} Ω/m</div>
+            <div class="info-item"><strong>Fecha:</strong> {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}</div>
+        </div>
+
+        <div class="status-box {status_class}">
+            {results['validaciones']['mensaje'].upper()}
+        </div>
+
+        <div class="metrics-container">
+            <div class="metric-card">
+                <strong>VA Conductor</strong><br>{results['calculos']['VACONDUCTOR']}
+            </div>
+            <div class="metric-card">
+                <strong>VA Total</strong><br>{results['calculos']['VATOTAL']}
+            </div>
+            <div class="metric-card">
+                <strong>Normalizado Sugerido</strong><br>{results['seleccion']['burden_normalizado']} VA
+            </div>
+            <div class="metric-card">
+                <strong>% Carga</strong><br>{results['seleccion']['porcentaje_uso']}%
+            </div>
+        </div>
+
+        <div class="gauge-container">
+            <h3>Gráfico de Carga del Transformador</h3>
+            {gauge_html}
+        </div>
+
+        <script>
+            window.onload = function() {{
+                setTimeout(function() {{
+                    window.print();
+                }}, 1200);
+            }};
+        </script>
+    </body>
+    </html>
+    """
+    return base64.b64encode(html_template.encode()).decode()
+
 def render_main_module():
     st.subheader("Análisis de Burden y Selección de TC (Basado en Plantilla)")
     pasted_text = st.text_area("Pega aquí el contenido del documento de Word", height=300)
@@ -340,8 +437,12 @@ def render_normative_module():
         c1, c2 = st.columns(2)
         with c1:
             tipo_trf = st.selectbox("Tipo de Transformador", ["TC", "TT"], index=0 if params.get("tipo_transformador", "TC") == "TC" else 1)
-            corriente_sec = st.number_input("Corriente Secundaria (A)", value=float(params.get("corriente_secundaria_A", 5.0)), step=4.0)
-            va_nom_tc = st.number_input("VA Nominal del TC", value=float(params.get("va_nominal_tc", 5.0)))
+            
+            # Cambio dinámico del label según el tipo de transformador
+            corriente_sec_label = "Corriente Secundaria (A)" if tipo_trf == "TC" else "Tensión Secundaria (V)"
+            corriente_sec = st.number_input(corriente_sec_label, value=float(params.get("corriente_secundaria_A", 5.0)), step=4.0)
+            va_nom_label = f"VA Nominal del {tipo_trf}"
+            va_nom_tc = st.number_input(va_nom_label, value=float(params.get("va_nominal_tc", 5.0)))
             burden_med = st.number_input("Burden del Medidor (VA)", value=float(params.get("burden_medidor_VA", 0.35)), format="%.4f")
         
         with c2:
@@ -363,6 +464,7 @@ def render_normative_module():
         }
 
         res = calculate_normative_burden(data_input)
+        res["resultado"] = "cumple" if res['validaciones']['cumple_rango'] else "no cumple"
 
         # Visualización de Resultados
         st.divider()
@@ -382,7 +484,7 @@ def render_normative_module():
             fig = go.Figure(go.Indicator(
                 mode = "gauge+number",
                 value = res['seleccion']['porcentaje_uso'],
-                title = {'text': "% Carga del TC"},
+                title = {'text': f"% Carga del {tipo_trf}"},
                 gauge = {
                     'axis': {'range': [0, 120]},
                     'bar': {'color': "black"},
@@ -406,6 +508,43 @@ def render_normative_module():
         else:
             st.error(f"❌ {res['validaciones']['mensaje']}")
         
+        # --- NUEVA SECCIÓN DE IMPRESIÓN Y EXCEL ---
+        st.divider()
+        
+        logo_b64_html = ""
+        if os.path.exists("logoemcali.png"):
+            logo_b64_html = get_base64_of_bin_file("logoemcali.png")
+
+        # Botón de Impresión HTML
+        html_b64 = get_normative_html_print_content(data_input, res, logo_b64_html)
+        
+        components.html(f"""
+            <button id="print_btn_norm" style="display: inline-flex; align-items: center; justify-content: center; background-color: #f0f2f6; color: #31333f; padding: 0.5rem 1rem; border: 1px solid rgba(49, 51, 63, 0.2); border-radius: 0.5rem; cursor: pointer; font-size: 1rem; font-weight: 400; width: auto; font-family: sans-serif;">
+                🖨️ Abrir Vista de Impresión (PDF)
+            </button>
+            <script>
+                document.getElementById('print_btn_norm').onclick = function() {{
+                    var base64 = "{html_b64}";
+                    var binaryString = window.atob(base64);
+                    var len = binaryString.length;
+                    var bytes = new Uint8Array(len);
+                    for (var i = 0; i < len; i++) {{ bytes[i] = binaryString.charCodeAt(i); }}
+                    var blob = new Blob([bytes], {{ type: 'text/html' }});
+                    var url = URL.createObjectURL(blob);
+                    window.open(url, '_blank');
+                }};
+            </script>
+        """, height=70)
+
+        evidence_bytes = build_evidence_xlsx(data_input, res)
+        st.download_button(
+            label="📥 Descargar Reporte de Evidencia (Excel)",
+            data=evidence_bytes,
+            file_name="Evidencia_Burden_Normativo.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        # ------------------------------------------
+
         with st.expander("Ver JSON de integración"):
             st.json(res)
 
