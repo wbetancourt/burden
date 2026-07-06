@@ -153,20 +153,23 @@ def _build_phase_results(inp: Inputs, calc_burden: dict, cumple_burden: bool, cu
         serie = inp.tc_series[i] if inp.tc_series and i < len(inp.tc_series) else "N/A"
         marca = inp.tc_marcas[i] if inp.tc_marcas and i < len(inp.tc_marcas) else "N/A"
 
+        # La justificación se construye en orden de prioridad
         if not cumple_burden:
-            justif = f"Burden fuera de rango ({util_gen*100:.1f}%)"
+            justif = f"Burden ({util_gen*100:.1f}%) fuera de rango (25%-100%)"
         elif not cumple_kva:
-            justif = f"kVA ({inp.kva_transformador}) excede máx. TC ({kva_inst})"
+            justif = f"kVA del Trafo ({inp.kva_transformador}) excede el máx. del TC instalado ({kva_inst})"
         elif not cumple_rec:
-            justif = f"TC no recomendado (usar {tc_rec})"
+            # Esto ahora es una advertencia, no un fallo si las otras condiciones son buenas
+            justif = f"Advertencia: El TC instalado no es el recomendado por tabla ({tc_rec})"
         else:
             justif = "Cumple criterios técnicos"
 
+        # El cumplimiento de la fase depende solo del burden y kVA, la recomendación es una guía.
         res_fases.append({
             "fase": label, "relacion": inp.tc_relacion, "serie": serie, "marca": marca,
             "va_tc": inp.va_tc, "burden_total": round(calc_burden["va_total"], 4),
-            "utilizacion": f"{util_gen*100:.2f}%", "util_float": util_gen * 100,
-            "cumple": "SÍ" if cumple_burden and cumple_kva and cumple_rec else "NO", "justificacion": justif
+            "utilizacion": f"{util_gen*100:.2f}%", "util_float": util_gen * 100, "justificacion": justif,
+            "cumple": "SÍ" if cumple_burden and cumple_kva else "NO"
         })
     return res_fases
 
@@ -188,7 +191,7 @@ def evalua(inp: Inputs) -> Dict:
     res_fases = _build_phase_results(inp, calc_burden, cumple_burden_rango, cumple_kva_tc, cumple_tc_rec, kva_inst, rec["tc"])
 
     # El resultado global (título) ahora coincide estrictamente con la columna "cumple" de la tabla
-    apto = cumple_burden_rango and cumple_kva_tc and cumple_tc_rec
+    apto = all(f["cumple"] == "SÍ" for f in res_fases)
 
     return {
         "tc_recomendado": rec["tc"],
