@@ -102,22 +102,22 @@ def burden_por_fase(inp: Inputs) -> Dict[str, float]:
     Cable: I^2 * R_lazo; R_lazo = (2*L[km]) * (ohm/km)
     """
     r_lazo = (2 * inp.long_ida_km) * inp.r_ohm_km
-    va_cable = (inp.ib_sec ** 2) * r_lazo
-    va_total = inp.burden_medidor_va_fase + va_cable + inp.burden_otros_va_fase
+    va_cable = (inp.ib_sec**2) * r_lazo
+    va_medidor = inp.burden_medidor_va_fase
+    va_otros = inp.burden_otros_va_fase
+    va_total = va_medidor + va_cable + va_otros
     utiliz = va_total / inp.va_tc if inp.va_tc else 0.0
     return {
         "r_lazo_ohm": r_lazo,
         "va_cable": va_cable,
+        "va_medidor": va_medidor,
+        "va_otros": va_otros,
         "va_total": va_total,
         "utilizacion": utiliz
     }
 
-def evalua(inp: Inputs) -> Dict:
-    rec = tc_recomendado(inp)
-    kva_inst = kva_max_por_tc_instalado(inp)
-    calc_burden = burden_por_fase(inp)
-
-    # Cálculo de kVA autorizados y restantes (Fórmula técnica solicitada)
+def _calculate_kva_authorized(inp: Inputs) -> dict:
+    """Calcula los kVA autorizados por el TC instalado y los kVA restantes."""
     kva_autorizado_calc = 0.0
     try:
         if inp.tc_relacion:
@@ -134,66 +134,72 @@ def evalua(inp: Inputs) -> Dict:
                 if inp.kv:
                     v_ref = float(inp.kv) * 1000.0
             
-            kva_autorizado_calc = (f_fases * v_ref * tc_primario) / 1000.0
-    except Exception:
+            if v_ref > 0:
+                kva_autorizado_calc = (f_fases * v_ref * tc_primario) / 1000.0
+    except (ValueError, IndexError, TypeError):
         kva_autorizado_calc = 0.0
     
     kva_restantes = inp.kva_transformador - kva_autorizado_calc if kva_autorizado_calc > 0 else 0.0
+    return {"kva_autorizado_calc": kva_autorizado_calc, "kva_restantes": kva_restantes}
+
+def _build_phase_results(inp: Inputs, calc_burden: dict, cumple_burden: bool, cumple_kva: bool, cumple_rec: bool, kva_inst: float, tc_rec: str) -> List[Dict[str, Any]]:
+    """Construye la lista de resultados detallados por fase."""
+    fases_labels = ["R", "S", "T"] if inp.fases == 3 else ["R"]
+    res_fases = []
+    
+    util_gen = calc_burden["utilizacion"]
+
+    for i, label in enumerate(fases_labels):
+        serie = inp.tc_series[i] if inp.tc_series and i < len(inp.tc_series) else "N/A"
+        marca = inp.tc_marcas[i] if inp.tc_marcas and i < len(inp.tc_marcas) else "N/A"
+
+        if not cumple_burden:
+            justif = f"Burden fuera de rango ({util_gen*100:.1f}%)"
+        elif not cumple_kva:
+            justif = f"kVA ({inp.kva_transformador}) excede máx. TC ({kva_inst})"
+        elif not cumple_rec:
+            justif = f"TC no recomendado (usar {tc_rec})"
+        else:
+            justif = "Cumple criterios técnicos"
+
+        res_fases.append({
+            "fase": label, "relacion": inp.tc_relacion, "serie": serie, "marca": marca,
+            "va_tc": inp.va_tc, "burden_total": round(calc_burden["va_total"], 4),
+            "utilizacion": f"{util_gen*100:.2f}%", "util_float": util_gen * 100,
+            "cumple": "SÍ" if cumple_burden and cumple_kva and cumple_rec else "NO", "justificacion": justif
+        })
+    return res_fases
+
+def evalua(inp: Inputs) -> Dict:
+    rec = tc_recomendado(inp)
+    kva_inst = kva_max_por_tc_instalado(inp)
+    calc_burden = burden_por_fase(inp)
+
+    # Cálculo de kVA autorizados y restantes (Fórmula técnica solicitada)
+    kva_calcs = _calculate_kva_authorized(inp)
 
     # Validaciones técnicas globales
     cumple_kva_tc = (kva_inst is not None) and (inp.kva_transformador <= kva_inst)
     cumple_tc_rec = (inp.tc_relacion is not None) and (rec["tc"] is not None) and (str(inp.tc_relacion).replace(" ","") == str(rec["tc"]).replace(" ",""))
     util_gen = calc_burden["utilizacion"]
-    cumple_burden_general = (util_gen >= 0.25) and (util_gen <= 1.00)
+    cumple_burden_rango = (util_gen >= 0.25) and (util_gen <= 1.00)
 
     # Resultados por fase
-    fases_labels = ["R", "S", "T"] if inp.fases == 3 else ["R"] # Asumimos R, S, T para 3 fases
-    res_fases = []
-    
-    for i, label in enumerate(fases_labels):
-        serie = inp.tc_series[i] if inp.tc_series and i < len(inp.tc_series) else "N/A"
-        marca = inp.tc_marcas[i] if inp.tc_marcas and i < len(inp.tc_marcas) else "N/A"
-        
-        # La columna de la tabla solo valida el rango de Burden (25% - 100%)
-        fase_cumple_burden = cumple_burden_general
-
-        if util_gen < 0.25:
-            justif = "Burden bajo (mín 25%)"
-        elif util_gen > 1.00:
-            justif = "Burden alto (máx 100%)"
-        elif not cumple_kva_tc:
-            justif = f"kVA exceso (máx {kva_inst} kVA)"
-        elif not cumple_tc_rec:
-            justif = f"TC no recomendado (usar {rec['tc']})"
-        else:
-            justif = "Cumple criterios técnicos"
-        
-        res_fases.append({
-            "fase": label,
-            "relacion": inp.tc_relacion,
-            "serie": serie,
-            "marca": marca,
-            "va_tc": inp.va_tc,
-            "burden_total": round(calc_burden["va_total"], 4),
-            "utilizacion": f"{util_gen*100:.2f}%",
-            "util_float": util_gen * 100, # Para el gráfico
-            "cumple": "SÍ" if fase_cumple_burden else "NO",
-            "justificacion": justif
-        })
+    res_fases = _build_phase_results(inp, calc_burden, cumple_burden_rango, cumple_kva_tc, cumple_tc_rec, kva_inst, rec["tc"])
 
     # El resultado global (título) ahora coincide estrictamente con la columna "cumple" de la tabla
-    apto = all([f["cumple"] == "SÍ" for f in res_fases])
+    apto = cumple_burden_rango and cumple_kva_tc and cumple_tc_rec
 
     return {
         "tc_recomendado": rec["tc"],
         "kva_max_tabla": rec["kva_max"],
         "kva_max_tc_instalado": kva_inst,
-        "kva_autorizado_calc": round(kva_autorizado_calc, 2),
-        "kva_restantes": round(kva_restantes, 2),
+        "kva_autorizado_calc": round(kva_calcs["kva_autorizado_calc"], 2),
+        "kva_restantes": round(kva_calcs["kva_restantes"], 2),
         "burden": calc_burden, # Mantener para compatibilidad si se usa en otro lado
         "detalle_fases": res_fases,
         "cumple": {
-            "burden": cumple_burden_general,
+            "burden": cumple_burden_rango,
             "kva_vs_tc": cumple_kva_tc,
             "tc_vs_recomendado": cumple_tc_rec
         },
