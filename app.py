@@ -342,11 +342,18 @@ def render_main_module():
         res_color = "green" if results["resultado"] == "cumple" else "red"
         st.markdown(f"#### Estado General: <span style='color:{res_color}; font-size:36px;'>{results['resultado'].upper()}</span>", unsafe_allow_html=True)
         
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("kVA Autorizado", f"{results['kva_autorizado_calc']} kVA")
-        m2.metric("kVA Restante", f"{results['kva_restantes']} kVA", delta_color="inverse")
-        m3.metric("TC Recomendado", results['tc_recomendado'])
-        m4.metric("kVA Máx (Instalado)", f"{results['kva_max_tc_instalado']} kVA")
+        st.write("##### Métricas de Potencia y Selección de TC")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("kVA Autorizado (TC Instalado)", f"{results['kva_autorizado_calc']} kVA")
+        m2.metric("TC Recomendado (Según Tabla)", results['tc_recomendado'])
+        m3.metric("kVA Máx. Permitido (Tabla)", f"{results['kva_max_tc_instalado']} kVA")
+
+        st.write("##### Desglose del Burden por Fase")
+        b1, b2, b3, b4 = st.columns(4)
+        b1.metric("VA Medidor", f"{results['burden']['va_medidor']:.4f} VA")
+        b2.metric("VA Conductor", f"{results['burden']['va_cable']:.4f} VA")
+        b3.metric("VA Otros", f"{results['burden']['va_otros']:.4f} VA")
+        b4.metric("VA Total", f"{results['burden']['va_total']:.4f} VA", f"{results['burden']['utilizacion']*100:.2f}% de Utilización")
 
         # Pestañas de detalle de resultados a todo lo ancho
         tab_res, tab_json = st.tabs(["📋 Detalle de Fases", "🔍 Verificación Técnica"])
@@ -472,16 +479,16 @@ def render_normative_module():
 
         # Visualización de Resultados
         st.divider()
-        col_res1, col_res2 = st.columns([1, 1])
+        col_res1, col_res2 = st.columns([1, 1.2])
 
         with col_res1:
             st.write("### Cálculos Realizados")
-            st.metric("VA Conductor", f"{res['calculos']['VACONDUCTOR']} VA")
-            st.metric("VA Medidor Total", f"{res['calculos']['VAMEDIDOR_TOTAL']} VA")
-            st.metric("Burden Total (VATOTAL)", f"{res['calculos']['VATOTAL']} VA")
+            st.metric("VA Medidor(es)", f"{res['calculos']['VAMEDIDOR_TOTAL']:.4f} VA", help=f"{data_input['numero_medidores']} medidor(es) de {data_input['burden_medidor_VA']:.2f} VA c/u")
+            st.metric("VA Conductor", f"{res['calculos']['VACONDUCTOR']:.4f} VA", help=f"Para {data_input['longitud_m']}m de conductor")
+            st.metric("Burden Total (Calculado)", f"{res['calculos']['VATOTAL']:.4f} VA")
 
         with col_res2:
-            st.write("### Selección y Validación")
+            st.write(f"### Selección y Carga del {tipo_trf}")
             st.write(f"**Burden Normalizado Sugerido:** {res['seleccion']['burden_normalizado']} VA")
             
             # Gauge de Porcentaje de Uso
