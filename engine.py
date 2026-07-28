@@ -155,21 +155,24 @@ def _build_phase_results(inp: Inputs, calc_burden: dict, cumple_burden: bool, cu
 
         # La justificación se construye en orden de prioridad
         if not cumple_burden:
-            justif = f"Burden ({util_gen*100:.1f}%) fuera de rango (25%-100%)"
+            justif = f"Burden ({util_gen*100:.1f}%) excede el límite máximo (100%)"
+        elif util_gen < 0.25:
+            # Esto ahora es una advertencia, no un fallo de cumplimiento
+            justif = f"Advertencia: Burden ({util_gen*100:.1f}%) por debajo del 25% recomendado"
         elif not cumple_kva:
-            justif = f"kVA del Trafo ({inp.kva_transformador}) excede el máx. del TC instalado ({kva_inst})"
+            justif = f"Advertencia: kVA del Trafo ({inp.kva_transformador}) excede el máx. del TC instalado ({kva_inst})"
         elif not cumple_rec:
             # Esto ahora es una advertencia, no un fallo si las otras condiciones son buenas
             justif = f"Advertencia: El TC instalado no es el recomendado por tabla ({tc_rec})"
         else:
             justif = "Cumple criterios técnicos"
 
-        # El cumplimiento de la fase depende solo del burden y kVA, la recomendación es una guía.
+        # El cumplimiento de la fase depende solo del burden, el kVA y recomendación son informativos.
         res_fases.append({
             "fase": label, "relacion": inp.tc_relacion, "serie": serie, "marca": marca,
             "va_tc": inp.va_tc, "burden_total": round(calc_burden["va_total"], 4),
             "utilizacion": f"{util_gen*100:.2f}%", "util_float": util_gen * 100, "justificacion": justif,
-            "cumple": "SÍ" if cumple_burden and cumple_kva else "NO"
+            "cumple": "SÍ" if cumple_burden else "NO"
         })
     return res_fases
 
@@ -185,7 +188,7 @@ def evalua(inp: Inputs) -> Dict:
     cumple_kva_tc = (kva_inst is not None) and (inp.kva_transformador <= kva_inst)
     cumple_tc_rec = (inp.tc_relacion is not None) and (rec["tc"] is not None) and (str(inp.tc_relacion).replace(" ","") == str(rec["tc"]).replace(" ",""))
     util_gen = calc_burden["utilizacion"]
-    cumple_burden_rango = (util_gen >= 0.25) and (util_gen <= 1.00)
+    cumple_burden_rango = (util_gen <= 1.00)
 
     # Resultados por fase
     res_fases = _build_phase_results(inp, calc_burden, cumple_burden_rango, cumple_kva_tc, cumple_tc_rec, kva_inst, rec["tc"])
