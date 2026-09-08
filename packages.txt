@@ -1,2 +1,9 @@
 tesseract-ocr
+
+
+# El siguiente comando limpia los repositorios antiguos que generan el error
+; rm -f /etc/apt/sources.list.d/*bullseye* && apt-get update
+
+# Coloca aquí abajo tus paquetes normales (por ejemplo):
+tesseract-ocr
 poppler-utils
