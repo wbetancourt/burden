@@ -8,6 +8,28 @@ from engine import Inputs, evalua, calculate_normative_burden
 from text_parser import parse_extracted_text, parse_indirect_text
 from report_xlsx import build_evidence_xlsx
 import datetime # Import datetime for automatic date
+import subprocess
+
+# Bandera para evitar que se reinstale en cada recarga de la página
+if not os.path.exists("/usr/bin/tesseract"):
+    try:
+        # 1. Ignorar el repositorio vencido y limpiar las listas de APT
+        subprocess.run([
+            "sudo", "apt-get", 
+            "-o", "Acquire::Check-Valid-Until=false", 
+            "-o", "Dir::Etc::sourcelist=/dev/null", # Ignora listas globales corruptas
+            "update"
+        ], check=True)
+        
+        # 2. Instalar tesseract y poppler forzando la actualización
+        subprocess.run([
+            "sudo", "apt-get", "install", "-y", 
+            "tesseract-ocr", "poppler-utils"
+        ], check=True)
+        
+    except subprocess.CalledProcessError as e:
+        print(f"Error al instalar paquetes del sistema: {e}")
+
 
 def get_base64_of_bin_file(bin_file):
     """Lee un archivo binario y lo devuelve en formato base64 string."""
