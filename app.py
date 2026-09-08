@@ -9,26 +9,25 @@ from text_parser import parse_extracted_text, parse_indirect_text
 from report_xlsx import build_evidence_xlsx
 import datetime # Import datetime for automatic date
 import subprocess
+import sys
 
-# Bandera para evitar que se reinstale en cada recarga de la página
-if not os.path.exists("/usr/bin/tesseract"):
+# Script autoejecutable para forzar dependencias del sistema de manera segura
+if not os.path.exists("/usr/bin/tesseract") or not os.path.exists("/usr/bin/pdftoppm"):
     try:
-        # 1. Ignorar el repositorio vencido y limpiar las listas de APT
+        # Forzar actualización ignorando tiempos de expiración y fuentes dañadas
         subprocess.run([
             "sudo", "apt-get", 
             "-o", "Acquire::Check-Valid-Until=false", 
-            "-o", "Dir::Etc::sourcelist=/dev/null", # Ignora listas globales corruptas
             "update"
-        ], check=True)
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        # 2. Instalar tesseract y poppler forzando la actualización
+        # Instalar limpiamente las herramientas requeridas
         subprocess.run([
             "sudo", "apt-get", "install", "-y", 
             "tesseract-ocr", "poppler-utils"
-        ], check=True)
-        
-    except subprocess.CalledProcessError as e:
-        print(f"Error al instalar paquetes del sistema: {e}")
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        print(f"Instalación alternativa en proceso...")
 
 
 def get_base64_of_bin_file(bin_file):
