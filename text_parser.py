@@ -117,4 +117,12 @@ def parse_indirect_text(text: str) -> Dict[str, Any]:
                 data[key] = int(val)
             else:
                 data[key] = float(val)
+
+    # For relacion_tc
+    rel_match = re.search(r"Relación TC\s*([\d/]+(?:\s*A)?)", text, re.IGNORECASE)
+    if not rel_match:
+        rel_match = re.search(r"(?:relacion_tc|relaci[oó]n tc)\D*([\d/]+(?:\s*A)?)", text, re.IGNORECASE)
+    if rel_match:
+        data["relacion_tc"] = rel_match.group(1).strip().replace(' A', '').replace('A', '')
+
     return data

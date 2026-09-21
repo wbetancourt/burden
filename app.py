@@ -205,6 +205,7 @@ def get_normative_html_print_content(data_input, results, logo_b64=""):
         
         <div class="info-grid">
             <div class="info-item"><strong>Tipo:</strong> {data_input['tipo_transformador']}</div>
+            <div class="info-item"><strong>Relación TC:</strong> {data_input.get('relacion_tc', 'N/A')}</div>
             <div class="info-item"><strong>Corriente Secundaria:</strong> {data_input['corriente_secundaria_A']} A</div>
             <div class="info-item"><strong>VA Nominal {data_input['tipo_transformador']}:</strong> {data_input['va_nominal_tc']} VA</div>
             <div class="info-item"><strong>Burden Medidor:</strong> {data_input['burden_medidor_VA']} VA</div>
@@ -476,6 +477,7 @@ def render_normative_module():
             va_nom_label = f"VA Nominal del {tipo_trf}"
             va_nom_tc = st.number_input(va_nom_label, value=float(params.get("va_nominal_tc", 5.0)))
             burden_med = st.number_input("Burden del Medidor (VA)", value=float(params.get("burden_medidor_VA", 0.35)), format="%.4f")
+            relacion_tc = st.text_input("Relación TC instalada", value=str(params.get("relacion_tc", "150/5")))
         
         with c2:
             longitud = st.number_input("Longitud Total ida+retorno (m)", value=float(params.get("longitud_m", 24.0)))
@@ -492,7 +494,8 @@ def render_normative_module():
             "burden_medidor_VA": burden_med,
             "numero_medidores": n_medidores,
             "tipo_transformador": tipo_trf,
-            "va_nominal_tc": va_nom_tc
+            "va_nominal_tc": va_nom_tc,
+            "relacion_tc": relacion_tc
         }
 
         res = calculate_normative_burden(data_input)
